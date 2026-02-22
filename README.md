@@ -1,0 +1,1 @@
+# jobswipe-ai-service
