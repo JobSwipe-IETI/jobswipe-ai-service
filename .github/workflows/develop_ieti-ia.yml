@@ -71,7 +71,11 @@ jobs:
         uses: azure/cli@v2
         with:
           inlineScript: |
-            RG=$(az webapp show --name IETI-IA --query resourceGroup -o tsv)
+            RG=$(az resource list --name IETI-IA --resource-type Microsoft.Web/sites --query "[0].resourceGroup" -o tsv)
+            if [ -z "$RG" ]; then
+              echo "Could not resolve resource group for app IETI-IA"
+              exit 1
+            fi
             az webapp config set \
               --resource-group "$RG" \
               --name IETI-IA \
