@@ -35,21 +35,26 @@ class AzureLLMService:
 
         self._client = None
         self._use_project_responses_api = False
+        self._init_error = None
         if self.is_configured():
             # Azure AI Foundry project endpoints work best with OpenAI(base_url=...)
             # and the Responses API.
-            if "/api/projects/" in (self.endpoint or ""):
-                self._use_project_responses_api = True
-                self._client = OpenAI(
-                    api_key=self.api_key,
-                    base_url=self.endpoint.rstrip("/"),
-                )
-            else:
-                self._client = AzureOpenAI(
-                    api_key=self.api_key,
-                    azure_endpoint=self.endpoint,
-                    api_version=self.api_version,
-                )
+            try:
+                if "/api/projects/" in (self.endpoint or ""):
+                    self._use_project_responses_api = True
+                    self._client = OpenAI(
+                        api_key=self.api_key,
+                        base_url=self.endpoint.rstrip("/"),
+                    )
+                else:
+                    self._client = AzureOpenAI(
+                        api_key=self.api_key,
+                        azure_endpoint=self.endpoint,
+                        api_version=self.api_version,
+                    )
+            except Exception as e:
+                self._init_error = str(e)
+                self._client = None
 
     def is_configured(self) -> bool:
         return bool(self.api_key and self.endpoint and self.chat_deployment)
