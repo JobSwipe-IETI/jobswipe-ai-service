@@ -67,6 +67,16 @@ jobs:
           tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_45ECEC9E209644A8A685C86018189F37 }}
           subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_154EC5ABC525407A92BDA749EDFC2555 }}
 
+      - name: Configure startup command for FastAPI
+        uses: azure/cli@v2
+        with:
+          inlineScript: |
+            RG=$(az webapp show --name IETI-IA --query resourceGroup -o tsv)
+            az webapp config set \
+              --resource-group "$RG" \
+              --name IETI-IA \
+              --startup-file "python -m uvicorn app.main:app --host 0.0.0.0 --port 8000"
+
       - name: 'Deploy to Azure Web App'
         uses: azure/webapps-deploy@v3
         id: deploy-to-webapp
