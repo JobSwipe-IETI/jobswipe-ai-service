@@ -15,12 +15,17 @@ class EmbeddingService:
         self.api_version = os.getenv("AZURE_OPENAI_API_VERSION", "2023-05-15")
 
         self._client = None
+        self._init_error = None
         if self.is_configured():
-            self._client = AzureOpenAI(
-                api_key=self.api_key,
-                azure_endpoint=self.endpoint,
-                api_version=self.api_version,
-            )
+            try:
+                self._client = AzureOpenAI(
+                    api_key=self.api_key,
+                    azure_endpoint=self.endpoint,
+                    api_version=self.api_version,
+                )
+            except Exception as e:
+                self._init_error = str(e)
+                self._client = None
 
     def is_configured(self) -> bool:
         return bool(self.api_key and self.endpoint and self.deployment)
