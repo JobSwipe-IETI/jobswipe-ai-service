@@ -44,6 +44,7 @@ def test_llm_service_not_configured_returns_none():
 
     assert service.is_configured() is False
     assert service.generate_match_feedback("c", "v", 80.0) is None
+    assert service.evaluate_match_dimensions({}, {}) is None
     assert service.extract_candidate_profile("cv text") is None
 
 
@@ -92,6 +93,32 @@ def test_llm_service_extract_profile_success(monkeypatch):
     assert profile.education[0].institution == "ECI"
 
 
+def test_llm_service_evaluate_match_dimensions_success(monkeypatch):
+    monkeypatch.setenv("AZURE_OPENAI_API_KEY", "k")
+    monkeypatch.setenv("AZURE_OPENAI_ENDPOINT", "https://example.com")
+    monkeypatch.setenv("AZURE_OPENAI_CHAT_DEPLOYMENT", "gpt-4.1")
+
+    response = _FakeCompletion([
+        _FakeChoice(
+            '{"technology_fit":{"score":88,"matched":["Python"],"missing":["FastAPI"],"rationale":"Buen stack base"},"experience_fit":{"score":72,"matched":["Backend"],"missing":["Leadership"],"rationale":"Experiencia parcial"},"requirements_fit":{"score":70,"matched":["REST APIs"],"missing":["Microservices"],"rationale":"Cumple parcialmente"},"context_fit":{"score":95,"matched":["Salary","Location"],"missing":[],"rationale":"Buen contexto"},"red_flags":[{"type":"missing_technology","severity":"medium","detail":"Falta FastAPI"}],"summary":"Buen fit parcial"}'
+        )
+    ])
+
+    def _fake_client(**kwargs):
+        return _FakeAzureClient(response=response)
+
+    monkeypatch.setattr(llm_module, "AzureOpenAI", _fake_client)
+
+    service = AzureLLMService()
+    result = service.evaluate_match_dimensions(
+        {"professional_title": "Backend"},
+        {"title": "Senior Backend"},
+    )
+
+    assert result["technology_fit"]["score"] == 88
+    assert result["red_flags"][0]["severity"] == "medium"
+
+
 def test_llm_service_empty_choices_returns_none(monkeypatch):
     monkeypatch.setenv("AZURE_OPENAI_API_KEY", "k")
     monkeypatch.setenv("AZURE_OPENAI_ENDPOINT", "https://example.com")
@@ -104,6 +131,7 @@ def test_llm_service_empty_choices_returns_none(monkeypatch):
 
     service = AzureLLMService()
     assert service.generate_match_feedback("cand", "vac", 92.5) is None
+    assert service.evaluate_match_dimensions({}, {}) is None
     assert service.extract_candidate_profile("cv text") is None
 
 
@@ -119,4 +147,5 @@ def test_llm_service_generic_error_returns_none(monkeypatch):
 
     service = AzureLLMService()
     assert service.generate_match_feedback("cand", "vac", 92.5) is None
+    assert service.evaluate_match_dimensions({}, {}) is None
     assert service.extract_candidate_profile("cv text") is None
