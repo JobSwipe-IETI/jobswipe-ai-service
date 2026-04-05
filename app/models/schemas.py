@@ -92,3 +92,4 @@ class MatchResponse(BaseModel):
     compatibility_level: str
     feedback: str
     used_llm_feedback: bool
+    score_breakdown: dict | None = None

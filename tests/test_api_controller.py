@@ -26,16 +26,52 @@ class _StubMatchingService:
     def to_compatibility_percentage(self, similarity):
         return 90.0
 
-    def compatibility_level(self, percentage):
-        return "high"
+    def score_structured_match(self, candidate_profile, vacancy_profile, similarity_score, llm_evaluation=None):
+        return {
+            "semantic_score": 88.0,
+            "technology_score": 75.0,
+            "experience_score": 60.0,
+            "requirements_score": 70.0,
+            "context_score": 65.0,
+            "compatibility_percentage": 68.0,
+            "hard_requirements": {
+                "passed": False,
+                "penalty_points": 12.0,
+                "penalties": [],
+                "reasons": ["Faltan tecnologias clave: postgresql"],
+            },
+            "reasons": ["Faltan tecnologias clave: postgresql"],
+            "details": {
+                "technology": {"matched": ["python"], "missing": ["postgresql"], "rationale": ""},
+                "experience": {"matched": ["backend"], "missing": ["senior"], "rationale": ""},
+                "requirements": {"matched": ["rest apis"], "missing": ["microservices"], "rationale": ""},
+                "context": {"matched": ["salary"], "missing": [], "rationale": ""},
+            },
+            "llm_evaluation_used": True,
+            "llm_red_flags": [],
+            "llm_red_flag_penalty": 0.0,
+        }
 
-    def generate_rule_based_feedback(self, percentage):
+    def compatibility_level(self, percentage):
+        return "high" if percentage >= 75 else "medium" if percentage >= 50 else "low"
+
+    def generate_rule_based_feedback(self, percentage, reasons=None):
         return "feedback from rules"
 
 
 class _StubLLMService:
     def __init__(self, feedback=None):
         self.feedback = feedback
+
+    def evaluate_match_dimensions(self, candidate_profile, vacancy_profile):
+        return {
+            "technology_fit": {"score": 75, "matched": ["python"], "missing": ["postgresql"], "rationale": "ok"},
+            "experience_fit": {"score": 60, "matched": ["backend"], "missing": ["senior"], "rationale": "ok"},
+            "requirements_fit": {"score": 70, "matched": ["rest apis"], "missing": ["microservices"], "rationale": "ok"},
+            "context_fit": {"score": 65, "matched": ["salary"], "missing": [], "rationale": "ok"},
+            "red_flags": [],
+            "summary": "Buen fit parcial",
+        }
 
     def generate_match_feedback(self, candidate_text, vacancy_text, compatibility_percentage):
         return self.feedback
@@ -112,8 +148,12 @@ def test_match_endpoint_with_structured_profiles(client, monkeypatch):
 
     body = response.json()
     assert response.status_code == 200
+    assert body["compatibility_percentage"] == 68.0
+    assert body["compatibility_level"] == "medium"
     assert body["feedback"] == "llm feedback"
     assert body["used_llm_feedback"] is True
+    assert body["score_breakdown"]["hard_requirements"]["penalty_points"] == 12.0
+    assert body["score_breakdown"]["llm_evaluation_used"] is True
 
 
 def test_match_endpoint_validation_error(client):

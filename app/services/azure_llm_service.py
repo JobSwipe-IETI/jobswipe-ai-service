@@ -35,26 +35,21 @@ class AzureLLMService:
 
         self._client = None
         self._use_project_responses_api = False
-        self._init_error = None
         if self.is_configured():
             # Azure AI Foundry project endpoints work best with OpenAI(base_url=...)
             # and the Responses API.
-            try:
-                if "/api/projects/" in (self.endpoint or ""):
-                    self._use_project_responses_api = True
-                    self._client = OpenAI(
-                        api_key=self.api_key,
-                        base_url=self.endpoint.rstrip("/"),
-                    )
-                else:
-                    self._client = AzureOpenAI(
-                        api_key=self.api_key,
-                        azure_endpoint=self.endpoint,
-                        api_version=self.api_version,
-                    )
-            except Exception as e:
-                self._init_error = str(e)
-                self._client = None
+            if "/api/projects/" in (self.endpoint or ""):
+                self._use_project_responses_api = True
+                self._client = OpenAI(
+                    api_key=self.api_key,
+                    base_url=self.endpoint.rstrip("/"),
+                )
+            else:
+                self._client = AzureOpenAI(
+                    api_key=self.api_key,
+                    azure_endpoint=self.endpoint,
+                    api_version=self.api_version,
+                )
 
     def is_configured(self) -> bool:
         return bool(self.api_key and self.endpoint and self.chat_deployment)
@@ -107,6 +102,73 @@ class AzureLLMService:
 
             content = completion.choices[0].message.content or ""
             return content.strip() or None
+        except Exception:
+            return None
+
+    def evaluate_match_dimensions(
+        self,
+        candidate_profile: dict,
+        vacancy_profile: dict,
+    ) -> dict | None:
+        if not self._client:
+            return None
+
+        system_prompt = (
+            "Eres un evaluador tecnico de matching laboral. "
+            "Analiza un candidateProfile y un vacancyProfile y devuelve SOLO JSON valido. "
+            "No devuelvas markdown, explicaciones ni texto adicional. "
+            "Debes evaluar de 0 a 100 estas dimensiones: technology_fit, experience_fit, "
+            "requirements_fit, context_fit. "
+            "Cada dimension debe incluir: score, matched, missing, rationale. "
+            "Adicionalmente devuelve red_flags como lista de objetos con keys: type, severity, detail. "
+            "Usa severity en low, medium o high. "
+            "No inventes experiencia si no hay evidencia en el perfil. "
+            "Considera technologies, skills, summary, experience, education, languages, location, salary y modality."
+        )
+
+        user_prompt = (
+            "Evalua la compatibilidad entre este perfil y esta vacante. "
+            "Responde exclusivamente con JSON valido usando esta estructura:\n"
+            "{\n"
+            '  "technology_fit": {"score": 0, "matched": [], "missing": [], "rationale": ""},\n'
+            '  "experience_fit": {"score": 0, "matched": [], "missing": [], "rationale": ""},\n'
+            '  "requirements_fit": {"score": 0, "matched": [], "missing": [], "rationale": ""},\n'
+            '  "context_fit": {"score": 0, "matched": [], "missing": [], "rationale": ""},\n'
+            '  "red_flags": [{"type": "missing_technology", "severity": "high", "detail": "Falta FastAPI"}],\n'
+            '  "summary": "Resumen corto"\n'
+            "}\n\n"
+            f"candidateProfile:\n{json.dumps(candidate_profile, ensure_ascii=False)}\n\n"
+            f"vacancyProfile:\n{json.dumps(vacancy_profile, ensure_ascii=False)}"
+        )
+
+        try:
+            if self._use_project_responses_api:
+                response = self._client.responses.create(
+                    model=self.chat_deployment,
+                    instructions=system_prompt,
+                    input=user_prompt,
+                    max_output_tokens=1200,
+                )
+                content = getattr(response, "output_text", "{}") or "{}"
+                return self._safe_json_loads(content)
+
+            completion = self._client.chat.completions.create(
+                model=self.chat_deployment,
+                temperature=0.1,
+                max_tokens=1200,
+                response_format={"type": "json_object"},
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+            )
+
+            if not completion.choices:
+                return None
+
+            content = completion.choices[0].message.content or "{}"
+            data = self._safe_json_loads(content)
+            return data or None
         except Exception:
             return None
 
