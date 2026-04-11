@@ -8,6 +8,21 @@ from app.models.schemas import CandidateProfileInput
 
 
 class AzureLLMService:
+    ALLOWED_SECTORS = [
+        "Tecnologia",
+        "Finanzas",
+        "Salud",
+        "Educacion",
+        "Retail",
+        "Logistica",
+        "Marketing",
+        "Construccion",
+        "Energia",
+        "Servicios",
+        "Telecomunicaciones",
+        "Otro",
+    ]
+
     def __init__(self):
         # Dedicated vars for PDF/chat model, with fallback to shared Azure OpenAI vars.
         self.api_key = os.getenv(
@@ -123,7 +138,7 @@ class AzureLLMService:
             "Adicionalmente devuelve red_flags como lista de objetos con keys: type, severity, detail. "
             "Usa severity en low, medium o high. "
             "No inventes experiencia si no hay evidencia en el perfil. "
-            "Considera technologies, skills, summary, experience, education, languages, location, salary y modality."
+            "Considera technologies, skills, summary, experience, education, languages, sector, location, salary y modality."
         )
 
         user_prompt = (
@@ -180,10 +195,14 @@ class AzureLLMService:
             "Eres un extractor de curriculum vitae para un formulario de registro. "
             "Debes devolver SOLO JSON valido, sin markdown, sin explicaciones y sin texto extra. "
             "El JSON debe contener estas claves: displayName, professionalTitle, summary, skills, "
-            "experience, education, location, languages, expectedSalary, availability, "
+            "experience, education, location, nationality, languages, sector, expectedSalary, availability, "
             "email, phoneNumber, github, linkedin, links. "
             "No devuelvas un objeto vacio. Si un campo no aparece, usa null o [] segun corresponda. "
             "Si el CV permite inferir un dato de forma razonable, rellena el valor. "
+            "El campo sector debe ser EXACTAMENTE uno de estos valores: "
+            "Tecnologia, Finanzas, Salud, Educacion, Retail, Logistica, Marketing, "
+            "Construccion, Energia, Servicios, Telecomunicaciones, Otro. "
+            "Si no se puede inferir un sector claro, usa 'Otro'. "
             "Para languages usa nombres completos (por ejemplo: Espanol, English), no codigos como es/en. "
             "Para links devuelve una lista de URLs profesionales validas (GitHub, LinkedIn, portafolio, etc.). "
             "Para experience.start, experience.end, education.start y education.end usa formato YYYY-MM-DD. "
@@ -219,7 +238,9 @@ class AzureLLMService:
             '    }\n'
             '  ],\n'
             '  "location": "Bogota",\n'
+            '  "nationality": "Colombia",\n'
             '  "languages": ["Espanol", "English"],\n'
+            '  "sector": "Tecnologia",\n'
             '  "expectedSalary": 7000000,\n'
             '  "availability": null,\n'
             '  "email": "persona@email.com",\n'
@@ -242,6 +263,7 @@ class AzureLLMService:
                 )
                 content = getattr(response, "output_text", "{}") or "{}"
                 data = self._safe_json_loads(content)
+                data = self._normalize_extracted_profile(data)
                 return CandidateProfileInput.model_validate(data)
 
             completion = self._client.chat.completions.create(
@@ -260,9 +282,53 @@ class AzureLLMService:
 
             content = completion.choices[0].message.content or "{}"
             data = self._safe_json_loads(content)
+            data = self._normalize_extracted_profile(data)
             return CandidateProfileInput.model_validate(data)
         except Exception:
             return None
+
+    def _normalize_extracted_profile(self, data: dict) -> dict:
+        if not isinstance(data, dict):
+            return {}
+
+        sector_value = data.get("sector")
+        if isinstance(sector_value, str):
+            normalized = self._normalize_sector(sector_value)
+            data["sector"] = normalized
+        elif sector_value is not None:
+            data["sector"] = "Otro"
+
+        return data
+
+    def _normalize_sector(self, raw_sector: str) -> str:
+        cleaned = (raw_sector or "").strip()
+        if not cleaned:
+            return "Otro"
+
+        lowered = cleaned.lower()
+        for sector in self.ALLOWED_SECTORS:
+            if lowered == sector.lower():
+                return sector
+
+        synonyms = {
+            "it": "Tecnologia",
+            "tech": "Tecnologia",
+            "software": "Tecnologia",
+            "saas": "Tecnologia",
+            "banking": "Finanzas",
+            "banca": "Finanzas",
+            "medical": "Salud",
+            "health": "Salud",
+            "education": "Educacion",
+            "logistics": "Logistica",
+            "construction": "Construccion",
+            "energy": "Energia",
+            "telecom": "Telecomunicaciones",
+        }
+        if lowered in synonyms:
+            return synonyms[lowered]
+
+        return "Otro"
 
     def _safe_json_loads(self, content: str) -> dict:
         raw = (content or "").strip()
