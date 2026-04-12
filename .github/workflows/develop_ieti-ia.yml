@@ -3,6 +3,7 @@ name: Build and deploy Python app to Azure Web App - IETI-IA
 on:
   push:
     branches:
+      - main
       - develop
       - main
   workflow_dispatch:
@@ -47,3 +48,5 @@ jobs:
         with:
           app-name: 'IETI-IA'
           publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+          slot-name: 'Production'
+          
