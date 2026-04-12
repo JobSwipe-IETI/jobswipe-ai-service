@@ -93,6 +93,30 @@ def test_llm_service_extract_profile_success(monkeypatch):
     assert profile.education[0].institution == "ECI"
 
 
+def test_llm_service_extract_profile_normalizes_sector(monkeypatch):
+    monkeypatch.setenv("AZURE_OPENAI_API_KEY", "k")
+    monkeypatch.setenv("AZURE_OPENAI_ENDPOINT", "https://example.com")
+    monkeypatch.setenv("AZURE_OPENAI_CHAT_DEPLOYMENT", "gpt-4.1")
+
+    response = _FakeCompletion([
+        _FakeChoice(
+            '{"professionalTitle":"Backend Engineer","summary":"Summary","skills":["Python"],"experience":[],"education":[],"location":"Bogota","nationality":"Colombia","languages":["Espanol"],"sector":"tech","expectedSalary":7000000,"availability":null,"email":"persona@email.com","phoneNumber":"+57 300 000 0000","github":[],"linkedin":[],"links":[]}'
+        )
+    ])
+
+    def _fake_client(**kwargs):
+        return _FakeAzureClient(response=response)
+
+    monkeypatch.setattr(llm_module, "AzureOpenAI", _fake_client)
+
+    service = AzureLLMService()
+    profile = service.extract_candidate_profile("cv text")
+
+    assert isinstance(profile, CandidateProfileInput)
+    assert profile.sector == "Tecnologia"
+    assert profile.nationality == "Colombia"
+
+
 def test_llm_service_evaluate_match_dimensions_success(monkeypatch):
     monkeypatch.setenv("AZURE_OPENAI_API_KEY", "k")
     monkeypatch.setenv("AZURE_OPENAI_ENDPOINT", "https://example.com")
