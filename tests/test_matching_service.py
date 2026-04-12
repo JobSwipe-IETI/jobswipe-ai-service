@@ -72,6 +72,45 @@ def test_build_vacancy_text_contains_expected_sections():
     assert "Rango salarial: 6000000 - 9000000" in text
 
 
+def test_context_score_rewards_matching_sector():
+    service = MatchingService()
+
+    candidate_profile = {
+        "location": "Bogota",
+        "sector": "Tecnologia",
+        "languages": ["english"],
+        "expected_salary": 8000000,
+    }
+    vacancy_profile = {
+        "location": "Bogota",
+        "sector": "Tecnologia",
+        "modality": "HYBRID",
+        "min_salary": 7000000,
+        "max_salary": 9000000,
+    }
+
+    score, notes = service._context_score(candidate_profile, vacancy_profile)
+
+    assert score > 60.0
+    assert "sector alineado" in notes
+
+
+def test_context_score_penalizes_different_sector():
+    service = MatchingService()
+
+    candidate_profile = {
+        "sector": "Finanzas",
+    }
+    vacancy_profile = {
+        "sector": "Tecnologia",
+    }
+
+    score, notes = service._context_score(candidate_profile, vacancy_profile)
+
+    assert score == 54.0
+    assert "sector diferente" in notes
+
+
 def test_calculate_similarity_and_percentage_and_level():
     service = MatchingService()
 

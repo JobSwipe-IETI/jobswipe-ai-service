@@ -37,7 +37,9 @@ class CandidateProfileInput(BaseModel):
     experience: list[CandidateExperienceInput] | str | None = Field(default=None, alias="experience")
     education: list[CandidateEducationInput] | str | None = Field(default=None, alias="education")
     location: str | None = Field(default=None, alias="location")
+    nationality: str | None = Field(default=None, alias="nationality")
     languages: list[str] | str | None = Field(default=None, alias="languages")
+    sector: str | None = Field(default=None, alias="sector")
     expected_salary: float | None = Field(default=None, alias="expectedSalary")
     availability: str | None = Field(default=None, alias="availability")
     email: str | None = Field(default=None, alias="email")
@@ -53,6 +55,7 @@ class VacancyProfileInput(BaseModel):
     title: str | None = None
     description: str | None = None
     location: str | None = None
+    sector: str | None = None
     modality: str | None = None
     employment_type: str | None = Field(default=None, alias="employmentType")
     experience_level: str | None = Field(default=None, alias="experienceLevel")

@@ -469,7 +469,17 @@ class MatchingService:
 
         candidate_location = self._normalize_token(self._to_text(candidate_profile.get("location")))
         vacancy_location = self._normalize_token(self._to_text(vacancy_profile.get("location")))
+        candidate_sector = self._normalize_token(self._to_text(candidate_profile.get("sector")))
+        vacancy_sector = self._normalize_token(self._to_text(vacancy_profile.get("sector")))
         modality = self._normalize_token(self._to_text(vacancy_profile.get("modality")))
+
+        if candidate_sector and vacancy_sector:
+            if candidate_sector == vacancy_sector:
+                score += 10.0
+                notes.append("sector alineado")
+            else:
+                score -= 6.0
+                notes.append("sector diferente")
 
         if vacancy_location and candidate_location:
             if candidate_location == vacancy_location:
