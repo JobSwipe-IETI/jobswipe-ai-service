@@ -31,6 +31,7 @@ Esto permite obtener un score más realista, explicable y estable que un porcent
 - Uvicorn
 - Azure OpenAI
 - Pytest
+- Docker
 
 ## Estructura del proyecto
 
@@ -122,6 +123,49 @@ El servicio quedará disponible en:
 
 ```text
 http://localhost:8000
+```
+
+## Ejecucion con Docker
+
+Puedes correr el servicio en contenedor sin depender del Python local.
+
+### 1. Variables de entorno
+
+Asegurate de tener un archivo `.env` en la raiz del proyecto con las variables de Azure OpenAI.
+
+### 2. Levantar con Docker Compose
+
+```powershell
+cd C:\dev\jobswipe-ai-service
+docker compose up --build -d
+```
+
+### 3. Ver logs
+
+```powershell
+cd C:\dev\jobswipe-ai-service
+docker compose logs -f jobswipe-ai-service
+```
+
+### 4. Probar estado
+
+```powershell
+curl http://localhost:8000/
+```
+
+### 5. Detener
+
+```powershell
+cd C:\dev\jobswipe-ai-service
+docker compose down
+```
+
+Si prefieres usar solo Docker (sin Compose):
+
+```powershell
+cd C:\dev\jobswipe-ai-service
+docker build -t jobswipe-ai-service .
+docker run --rm --name jobswipe-ai-service -p 8000:8000 --env-file .env jobswipe-ai-service
 ```
 
 ## Endpoints principales

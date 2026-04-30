@@ -2,6 +2,8 @@ from fastapi import APIRouter, File, HTTPException, UploadFile
 
 from app.services.azure_llm_service import AzureLLMService
 from app.services.pdf_extraction_service import PdfExtractionService
+from app.models.schemas import CandidateProfileInput
+from fastapi import Body
 
 router = APIRouter(
     prefix="/profiles",
@@ -42,3 +44,17 @@ async def extract_cv(file: UploadFile = File(...)):
         "rawTextLength": len(extracted_text),
         "usedAi": True,
     }
+
+
+@router.post("/analyze")
+async def analyze_profile(payload: CandidateProfileInput = Body(...)):
+    """Analyze a profile: run static checks and call LLM for suggestions."""
+    profile_dict = payload.model_dump(by_alias=True, exclude_none=False)
+
+    # Static + AI analysis
+    result = llm_service.analyze_candidate_profile(profile_dict)
+
+    if not result:
+        raise HTTPException(status_code=503, detail="No se pudo analizar el perfil en este momento.")
+
+    return result

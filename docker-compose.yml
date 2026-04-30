@@ -1,0 +1,11 @@
+services:
+  jobswipe-ai-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: jobswipe-ai-service
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    restart: unless-stopped
