@@ -404,3 +404,182 @@ def test_requirements_details_use_fallback_when_llm_not_available():
 
     assert score["details"]["requirements"]["source"] == "fallback"
     assert score["details"]["requirements"]["fallback_assessment"] is None
+
+
+def test_helper_branches_cover_zero_norm_and_fallback_paths():
+    service = MatchingService()
+
+    assert service._to_text(123) == "123"
+    assert service._to_csv_text("  x  ") == "x"
+    assert service._experience_to_text("  direct  ") == "direct"
+    assert service._experience_to_text({"role": "Dev", "company": "Acme"}) == "Dev |  | Acme"
+    assert service._education_to_text("  degree  ") == "degree"
+    assert service._education_to_text({"institution": "ECI", "status": "En curso"}) == "ECI |  |  |  | En curso"
+    assert service.calculate_similarity([0.0, 0.0], [1.0, 0.0]) == 0.0
+    assert service._normalize_similarity_score(0.35) == 0.0
+    assert service._normalize_token("C# / .NET!!") == "c# .net"
+    assert service._normalize_phrase("API REST") == "rest apis"
+    assert service._value_to_list("a, b; c\n d") == ["a", "b", "c", "d"]
+    assert service._candidate_soft_skills_blob({"summary": "S", "professional_title": "T"}).startswith("s")
+    assert "github" in service._extract_candidate_technologies({"github": ["https://github.com/u"]})
+    assert service._extract_vacancy_technologies({}) == set()
+    assert service._extract_requirement_keywords({"description": "English required", "responsibilities": ["Code reviews"], "soft_skills": ["Communication"]})["hard"]
+    assert service._candidate_matches_keyword("python fastapi", "api development") is False
+    assert service._candidate_matches_soft_skill("trabajo en equipo", "teamwork") is True
+    assert service._parse_year("2024-01-01") == 2024
+    assert service._parse_year("unknown") is None
+    assert service._experience_duration_years([{"start": "2020-01-01", "end": "2022-01-01"}]) == 2.0
+    assert service._technology_match_score({}, {})[0] == 60.0
+
+
+def test_scoring_and_penalty_branches_cover_llm_and_hard_requirements():
+    service = MatchingService()
+
+    candidate_profile = {
+        "professional_title": "Senior Backend Engineer",
+        "summary": "Backend engineer with 8 years in Python and FastAPI",
+        "skills": ["Python", "FastAPI", "PostgreSQL", "Docker"],
+        "experience": [
+            {"role": "Senior Backend Engineer", "tech": ["Python", "FastAPI"], "description": "REST APIs", "start": "2018-01-01", "end": "Present"}
+        ],
+        "education": [{"institution": "ECI", "degree": "Systems", "start": "2010-01-01", "end": "2015-01-01", "status": "Graduated"}],
+        "location": "Bogota",
+        "languages": ["english", "spanish"],
+        "sector": "Tecnologia",
+        "expected_salary": 9000000,
+    }
+    vacancy_profile = {
+        "title": "Senior Python Backend Engineer",
+        "description": "English required. Build APIs and microservices. Code reviews. System design.",
+        "location": "Bogota",
+        "modality": "HYBRID",
+        "experience_level": "SENIOR",
+        "technologies": ["Python", "FastAPI", "PostgreSQL"],
+        "technical_requirements": ["REST APIs", "Microservices"],
+        "soft_skills": ["Communication", "Teamwork"],
+        "responsibilities": ["Code reviews"],
+        "min_salary": 8000000,
+        "max_salary": 10000000,
+    }
+
+    assert service._infer_experience_level(candidate_profile) >= 3
+    assert service._required_experience_level(vacancy_profile) == 3
+    assert service._extract_languages(["Espanol", "English"]) == {"espanol", "english"}
+    assert service._extract_required_languages(vacancy_profile) == {"english"}
+    assert service._candidate_matches_keyword("python fastapi rest apis", "rest apis") is True
+    assert service._candidate_matches_soft_skill("ownership collaboration", "teamwork") is True
+
+    validation = service.validate_hard_requirements(candidate_profile, vacancy_profile)
+    assert validation["passed"] is True
+    assert validation["penalties"] == []
+
+    structured = service.score_structured_match(
+        candidate_profile,
+        vacancy_profile,
+        similarity_score=0.92,
+        llm_evaluation={
+            "technology_fit": {"score": 80, "matched": ["Python"], "missing": ["FastAPI"], "rationale": "ok"},
+            "experience_fit": {"score": 70, "matched": ["Backend"], "missing": [], "rationale": "ok"},
+            "requirements_fit": {"score": 65, "matched": ["REST APIs"], "missing": ["Microservices"], "rationale": "ok"},
+            "context_fit": {"score": 90, "matched": ["Location"], "missing": [], "rationale": "ok"},
+            "red_flags": [
+                {"type": "missing_technology", "severity": "high", "detail": "Falta FastAPI"},
+                {"type": "salary_gap", "severity": "medium", "detail": "No debe duplicar"},
+                {"type": "experience_gap", "severity": "low", "detail": "No debe duplicar"},
+            ],
+            "summary": "Buen fit",
+        },
+    )
+
+    assert structured["llm_evaluation_used"] is True
+    assert structured["llm_red_flag_penalty"] > 0.0
+    assert structured["details"]["requirements"]["source"] == "llm"
+    assert structured["reasons"]
+
+    fallback = service.score_structured_match(
+        {"skills": ["Excel"], "experience": [], "location": "Medellin", "expected_salary": 20000000},
+        {"technologies": ["Python"], "experience_level": "SENIOR", "location": "Bogota", "modality": "HYBRID", "max_salary": 8000000},
+        similarity_score=0.2,
+    )
+    assert fallback["hard_requirements"]["passed"] is False
+    assert fallback["details"]["requirements"]["source"] == "fallback"
+    assert fallback["soft_matches"] == []
+
+
+def test_feedback_levels_and_red_flags_cover_all_paths():
+    service = MatchingService()
+
+    assert service.to_compatibility_percentage(0.85) == 100.0
+    assert service.compatibility_level(74.9) == "medium"
+    assert service.generate_rule_based_feedback(80, ["a", "", None]).startswith("El perfil del candidato")
+
+    assert service._normalize_dimension_score("x", 33.3) == 33.3
+    assert service._normalize_llm_dimension({}, "technology_fit", {"score": 11.0, "matched": ["a"], "missing": ["b"], "rationale": "r"}) == {"score": 11.0, "matched": ["a"], "missing": ["b"], "rationale": "r"}
+    assert service._normalize_red_flag_type("Missing Technology") == "missing_technologies"
+    penalty, reasons = service._red_flag_penalty([{"type": "salary_gap", "severity": "high", "detail": "dup"}], [{"type": "salary_gap"}])
+    assert penalty == 0.0
+
+
+def test_edge_cases_with_malformed_data_cover_defensive_branches():
+    """Test defensive branches handling non-dict items and malformed data."""
+    service = MatchingService()
+
+    # Lines 76-77: _experience_to_text with list containing non-dict items
+    malformed_experience_list = ["string_item", 123, {"role": "Dev", "company": "Acme"}]
+    result = service._experience_to_text(malformed_experience_list)
+    assert "string_item" in result and "123" in result and "Dev" in result
+
+    # Lines 103, 114-115: _education_to_text with list containing non-dict items
+    malformed_education_list = ["string_item", 456, {"institution": "ECI", "degree": "CS"}]
+    result = service._education_to_text(malformed_education_list)
+    assert "string_item" in result and "456" in result and "ECI" in result
+
+    # Test single string/number forms too (these test lines 70-72, 99-101)
+    assert service._experience_to_text("single_string").strip() == "single_string"
+    assert service._education_to_text("single_education").strip() == "single_education"
+
+    # Lines 225, 245, 279: extract with empty/malformed structures
+    candidate_empty = {
+        "experience": [],
+        "education": [],
+        "skills": None,
+        "github": "",
+        "linkedin": "",
+        "portfolio": None,
+    }
+    result = service._extract_candidate_technologies(candidate_empty)
+    assert isinstance(result, set)
+    assert len(result) == 0
+
+    # Lines 332: extract_requirement_keywords with minimal fields
+    vacancy_minimal = {"description": "No requirements", "responsibilities": None, "soft_skills": None}
+    result = service._extract_requirement_keywords(vacancy_minimal)
+    assert isinstance(result, dict)
+    assert "hard" in result and "soft" in result
+
+    # Lines 443, 489: language extraction with non-standard formats
+    languages_messy = ["  English  ", "", None, "Spanish", "chinese", "PORTUGUESE"]
+    result = service._extract_languages(languages_messy)
+    assert isinstance(result, set)
+    assert len(result) >= 3
+
+    # Lines 515-520: _technology_match_score with empty vacancy tech
+    candidate_profile = {"skills": ["Python", "FastAPI"], "experience": [], "education": []}
+    vacancy_profile_empty = {"technologies": []}
+    score_empty, breakdown = service._technology_match_score(candidate_profile, vacancy_profile_empty)
+    assert score_empty == 60.0
+    assert isinstance(breakdown, dict)
+    
+    # Lines 515-520: _technology_match_score with some matched
+    vacancy_profile = {"technologies": ["Python", "Java"]}
+    score, breakdown = service._technology_match_score(candidate_profile, vacancy_profile)
+    assert isinstance(score, float)
+    assert "matched" in breakdown and "missing" in breakdown
+
+    # Lines 530, 577, 580, 608: score_structured_match with minimal data
+    simple_candidate = {"skills": ["Python"], "professional_title": "Dev", "location": "Bogota"}
+    simple_vacancy = {"technologies": ["Python"], "title": "Python Dev", "location": "Bogota"}
+    score = service.score_structured_match(simple_candidate, simple_vacancy, similarity_score=0.5)
+    assert isinstance(score, dict)
+    assert "hard_requirements" in score
+    assert "compatibility_percentage" in score

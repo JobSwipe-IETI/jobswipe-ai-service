@@ -26,6 +26,16 @@ class _StubLLMService:
     def extract_candidate_profile(self, cv_text):
         return self.profile
 
+    def analyze_candidate_profile(self, profile_dict):
+        if profile_dict.get("professionalTitle") == "fail":
+            return None
+        return {
+            "overall_score": 84,
+            "summary": "Buen perfil",
+            "sections": [],
+            "suggestions": [],
+        }
+
 
 def test_extract_cv_endpoint_success(client, monkeypatch):
     monkeypatch.setattr(profile_controller, "pdf_service", _StubPdfService("cv text"))
@@ -102,3 +112,39 @@ def test_extract_cv_endpoint_returns_503_when_ai_fails(client, monkeypatch):
 
     assert response.status_code == 503
     assert "Azure OpenAI" in response.json()["detail"]
+
+
+def test_analyze_profile_endpoint_success(client, monkeypatch):
+    monkeypatch.setattr(profile_controller, "llm_service", _StubLLMService())
+
+    response = client.post(
+        "/profiles/analyze",
+        json={
+            "professionalTitle": "Backend Engineer",
+            "summary": "Summary",
+            "skills": ["Python"],
+            "experience": [],
+            "education": [],
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["overall_score"] == 84
+
+
+def test_analyze_profile_endpoint_returns_503_when_ai_fails(client, monkeypatch):
+    monkeypatch.setattr(profile_controller, "llm_service", _StubLLMService())
+
+    response = client.post(
+        "/profiles/analyze",
+        json={
+            "professionalTitle": "fail",
+            "summary": "Summary",
+            "skills": ["Python"],
+            "experience": [],
+            "education": [],
+        },
+    )
+
+    assert response.status_code == 503
+    assert "No se pudo analizar" in response.json()["detail"]
